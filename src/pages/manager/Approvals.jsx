@@ -1,19 +1,15 @@
-// src/pages/manager/Approvals.jsx
+// src/pages/manager/Approvals.jsx  (full file: "Open live sheet" and "Sync all to sheet" buttons added)
 import { useEffect, useState } from "react";
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
   Paper, Radio, RadioGroup, Table, TableBody, TableCell, TableHead, TableRow,
   TextField, Typography,
 } from "@mui/material";
-import FileDownloadOutlined from "@mui/icons-material/FileDownloadOutlined";
-import TaskAltRounded from "@mui/icons-material/TaskAltRounded";
 import { managerApi } from "../../api/services";
 import { errorMessage } from "../../api/axios";
 import { useToast } from "../../context/ToastContext";
 import ProgressBar from "../../components/ProgressBar";
 import UpdatesList from "../../components/UpdatesList";
-import PageHeader from "../../components/PageHeader";
-import { palette } from "../../theme";
 
 export default function Approvals() {
   const toast = useToast();
@@ -22,12 +18,15 @@ export default function Approvals() {
   const [updates, setUpdates] = useState([]);
   const [decision, setDecision] = useState("APPROVED");
   const [comment, setComment] = useState("");
+  const [sheet, setSheet] = useState({ enabled: false, url: "" });
+  const [syncing, setSyncing] = useState(false);
 
   const load = () =>
     managerApi.tasks({ status: "SUBMITTED" }).then(setTasks).catch((e) => toast(errorMessage(e), "error"));
 
   useEffect(() => {
     load();
+    managerApi.sheetInfo().then(setSheet).catch(() => {});   // sheet is optional
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -40,14 +39,13 @@ export default function Approvals() {
   };
 
   const handleSubmit = async () => {
-    // "Rework" is sent to the backend as REJECTED, so the backend needs no change
     if (decision === "REJECTED" && !comment.trim()) {
-      toast("Please add a comment explaining what needs rework", "warning");
+      toast("Please add a comment when rejecting", "warning");
       return;
     }
     try {
       await managerApi.review(selected.id, { decision, comment });
-      toast(decision === "APPROVED" ? "Approved and added to the Excel report" : "Sent back for rework");
+      toast(decision === "APPROVED" ? "Approved and recorded" : "Task sent back and recorded");
       setSelected(null);
       load();
     } catch (e) {
@@ -55,7 +53,7 @@ export default function Approvals() {
     }
   };
 
-  // Download the report rebuilt from the database
+  // Download the Excel report rebuilt from the database
   const handleDownload = async () => {
     try {
       const blob = await managerApi.downloadReport();
@@ -72,17 +70,38 @@ export default function Approvals() {
     }
   };
 
+  // Rewrite the live Google Sheet from the database
+  const handleSync = async () => {
+    if (!window.confirm("Rewrite both tabs of the live sheet from the database? Manual edits in those tabs will be replaced.")) return;
+    setSyncing(true);
+    try {
+      const res = await managerApi.syncSheet();
+      toast(`Live sheet synced (${res.rowsWritten} rows)`);
+    } catch (e) {
+      toast(errorMessage(e), "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <>
-      <PageHeader
-        title="Waiting for approval"
-        subtitle={`${tasks.length} ${tasks.length === 1 ? "submission" : "submissions"} to review`}
-        action={
-          <Button variant="outlined" startIcon={<FileDownloadOutlined />} onClick={handleDownload}>
-            Download Excel report
-          </Button>
-        }
-      />
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 1, flexWrap: "wrap" }}>
+        <Typography variant="h5" fontWeight={700}>Waiting for approval</Typography>
+        <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+          {sheet.enabled && (
+            <>
+              <Button variant="outlined" component="a" href={sheet.url} target="_blank" rel="noopener noreferrer">
+                Open live sheet
+              </Button>
+              <Button variant="outlined" onClick={handleSync} disabled={syncing}>
+                {syncing ? "Syncing..." : "Sync all to sheet"}
+              </Button>
+            </>
+          )}
+          <Button variant="outlined" onClick={handleDownload}>Download Excel report</Button>
+        </Box>
+      </Box>
 
       <Paper sx={{ overflowX: "auto" }}>
         <Table>
@@ -100,11 +119,11 @@ export default function Approvals() {
           <TableBody>
             {tasks.map((t) => (
               <TableRow key={t.id} hover>
-                <TableCell sx={{ fontWeight: 600 }}>{t.projectName}</TableCell>
+                <TableCell>{t.projectName}</TableCell>
                 <TableCell>{t.weekNumber}</TableCell>
                 <TableCell>{t.title}</TableCell>
                 <TableCell>{t.assignedToName}</TableCell>
-                <TableCell sx={{ color: "text.secondary", whiteSpace: "nowrap" }}>{t.deadline}</TableCell>
+                <TableCell>{t.deadline}</TableCell>
                 <TableCell><ProgressBar value={t.completionPercent} /></TableCell>
                 <TableCell align="right">
                   <Button variant="contained" size="small" onClick={() => openReview(t)}>Review</Button>
@@ -113,10 +132,7 @@ export default function Approvals() {
             ))}
             {tasks.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 7 }}>
-                  <TaskAltRounded sx={{ fontSize: 44, color: palette.primary, mb: 1 }} />
-                  <Typography color="text.secondary">Nothing waiting for review</Typography>
-                </TableCell>
+                <TableCell colSpan={7} align="center">Nothing waiting for review</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -126,30 +142,29 @@ export default function Approvals() {
       <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} fullWidth maxWidth="sm">
         <DialogTitle>Review: {selected?.title}</DialogTitle>
         <DialogContent>
-          <Typography variant="subtitle2" fontWeight={700} gutterBottom>Daily updates</Typography>
+          <Typography variant="subtitle2" gutterBottom>Daily updates</Typography>
           <UpdatesList updates={updates} />
 
-          <Box sx={{ mt: 2, p: 1.5, borderRadius: 3, bgcolor: palette.tint }}>
-            <RadioGroup row value={decision} onChange={(e) => setDecision(e.target.value)}>
-              <FormControlLabel value="APPROVED" control={<Radio color="success" />} label="Approve" />
-              <FormControlLabel value="REJECTED" control={<Radio color="warning" />} label="Rework" />
-            </RadioGroup>
-          </Box>
+          <RadioGroup row value={decision} onChange={(e) => setDecision(e.target.value)} sx={{ mt: 2 }}>
+            <FormControlLabel value="APPROVED" control={<Radio />} label="Approve" />
+            <FormControlLabel value="REJECTED" control={<Radio />} label="Reject" />
+          </RadioGroup>
 
           <TextField
-            label={decision === "REJECTED" ? "What needs rework? (required)" : "Comment (optional)"}
+            label={decision === "REJECTED" ? "Comment (required)" : "Comment (optional)"}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             fullWidth
             multiline
             minRows={2}
-            sx={{ mt: 2 }}
+            sx={{ mt: 1 }}
+            helperText="Your comment is recorded in the Manager Reviews sheet."
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <DialogActions>
           <Button onClick={() => setSelected(null)}>Cancel</Button>
-          <Button variant="contained" color={decision === "APPROVED" ? "success" : "warning"} onClick={handleSubmit}>
-            {decision === "APPROVED" ? "Approve" : "Send for rework"}
+          <Button variant="contained" color={decision === "APPROVED" ? "success" : "error"} onClick={handleSubmit}>
+            {decision === "APPROVED" ? "Approve" : "Reject"}
           </Button>
         </DialogActions>
       </Dialog>

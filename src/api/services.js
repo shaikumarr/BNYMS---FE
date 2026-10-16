@@ -1,3 +1,4 @@
+// src/api/services.js  (full file: sheetInfo and syncSheet added)
 import api from "./axios";
 
 const data = (promise) => promise.then((res) => res.data);
@@ -31,6 +32,10 @@ export const managerApi = {
 
   downloadReport: () =>
     data(api.get("/manager/reports/excel", { responseType: "blob" })),
+
+  // live Google Sheet
+  sheetInfo: () => data(api.get("/manager/sheet")),
+  syncSheet: () => data(api.post("/manager/sheet/sync")),
 };
 
 export const userApi = {
