@@ -1,4 +1,4 @@
-// src/pages/manager/Approvals.jsx  (full file: "Open live sheet" and "Sync all to sheet" buttons added)
+// src/pages/manager/Approvals.jsx
 import { useEffect, useState } from "react";
 import {
   Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
@@ -16,10 +16,13 @@ export default function Approvals() {
   const [tasks, setTasks] = useState([]);
   const [selected, setSelected] = useState(null);
   const [updates, setUpdates] = useState([]);
+  // "APPROVED" or "REJECTED" (REJECTED is the internal value for Rework)
   const [decision, setDecision] = useState("APPROVED");
   const [comment, setComment] = useState("");
   const [sheet, setSheet] = useState({ enabled: false, url: "" });
   const [syncing, setSyncing] = useState(false);
+
+  const isRework = decision === "REJECTED";
 
   const load = () =>
     managerApi.tasks({ status: "SUBMITTED" }).then(setTasks).catch((e) => toast(errorMessage(e), "error"));
@@ -39,13 +42,13 @@ export default function Approvals() {
   };
 
   const handleSubmit = async () => {
-    if (decision === "REJECTED" && !comment.trim()) {
-      toast("Please add a comment when rejecting", "warning");
+    if (isRework && !comment.trim()) {
+      toast("Please write what needs to be reworked", "warning");
       return;
     }
     try {
       await managerApi.review(selected.id, { decision, comment });
-      toast(decision === "APPROVED" ? "Approved and recorded" : "Task sent back and recorded");
+      toast(isRework ? "Sent for rework and recorded" : "Approved and recorded");
       setSelected(null);
       load();
     } catch (e) {
@@ -147,24 +150,24 @@ export default function Approvals() {
 
           <RadioGroup row value={decision} onChange={(e) => setDecision(e.target.value)} sx={{ mt: 2 }}>
             <FormControlLabel value="APPROVED" control={<Radio />} label="Approve" />
-            <FormControlLabel value="REJECTED" control={<Radio />} label="Reject" />
+            <FormControlLabel value="REJECTED" control={<Radio />} label="Rework" />
           </RadioGroup>
 
           <TextField
-            label={decision === "REJECTED" ? "Comment (required)" : "Comment (optional)"}
+            label={isRework ? "What needs to be reworked? (required)" : "Comment (optional)"}
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             fullWidth
             multiline
             minRows={2}
             sx={{ mt: 1 }}
-            helperText="Your comment is recorded in the Manager Reviews sheet."
+            helperText="Your comment is shown to the employee and recorded in the Manager Reviews sheet."
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelected(null)}>Cancel</Button>
-          <Button variant="contained" color={decision === "APPROVED" ? "success" : "error"} onClick={handleSubmit}>
-            {decision === "APPROVED" ? "Approve" : "Reject"}
+          <Button variant="contained" color={isRework ? "warning" : "success"} onClick={handleSubmit}>
+            {isRework ? "Send for rework" : "Approve"}
           </Button>
         </DialogActions>
       </Dialog>

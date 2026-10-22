@@ -1,3 +1,4 @@
+// src/pages/user/TaskDetail.jsx
 import { useEffect, useState } from "react";
 import { Link as RouterLink, useParams } from "react-router-dom";
 import { Alert, Box, Button, CircularProgress, Link, Paper, TextField, Typography } from "@mui/material";
@@ -107,9 +108,10 @@ export default function TaskDetail() {
         </Typography>
       </Paper>
 
+      {/* REJECTED is the internal status; employees see it as Rework */}
       {task.status === "REJECTED" && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          Manager sent this back: {task.reviewComment}. Add an update and submit again.
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Rework needed: {task.reviewComment}. Make the changes, add an update and submit again.
         </Alert>
       )}
       {task.status === "SUBMITTED" && (
