@@ -1,9 +1,9 @@
 // src/pages/manager/Approvals.jsx
 import { useEffect, useState } from "react";
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-  Paper, Radio, RadioGroup, Table, TableBody, TableCell, TableHead, TableRow,
-  TextField, Typography,
+  Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
+  FormControlLabel, Paper, Radio, RadioGroup, Table, TableBody, TableCell, TableHead,
+  TableRow, TextField, Typography,
 } from "@mui/material";
 import { managerApi } from "../../api/services";
 import { errorMessage } from "../../api/axios";
@@ -20,7 +20,8 @@ export default function Approvals() {
   const [decision, setDecision] = useState("APPROVED");
   const [comment, setComment] = useState("");
   const [sheet, setSheet] = useState({ enabled: false, url: "" });
-  const [syncing, setSyncing] = useState(false);
+  const [reportAsk, setReportAsk] = useState(false);       // status report window
+  const [downloading, setDownloading] = useState(false);
 
   const isRework = decision === "REJECTED";
 
@@ -48,7 +49,7 @@ export default function Approvals() {
     }
     try {
       await managerApi.review(selected.id, { decision, comment });
-      toast(isRework ? "Sent for rework and recorded" : "Approved and recorded");
+      toast(isRework ? "Sent for rework and added to the sheet" : "Approved and added to the sheet");
       setSelected(null);
       load();
     } catch (e) {
@@ -56,34 +57,31 @@ export default function Approvals() {
     }
   };
 
-  // Download the Excel report rebuilt from the database
+  // "Open file": opens the live sheet in a new tab. Nothing is downloaded.
+  // (window.open must run straight inside the click, before any await.)
+  const handleOpenFile = () => {
+    window.open(sheet.url, "_blank", "noopener,noreferrer");
+    setReportAsk(false);
+  };
+
+  // "Download": saves the Excel status report only. The sheet is NOT opened.
   const handleDownload = async () => {
+    setDownloading(true);
     try {
       const blob = await managerApi.downloadReport();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "approved-updates.xlsx";
+      link.download = "status-report.xlsx";
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      setReportAsk(false);
     } catch {
-      toast("Could not download the report", "error");
-    }
-  };
-
-  // Rewrite the live Google Sheet from the database
-  const handleSync = async () => {
-    if (!window.confirm("Rewrite both tabs of the live sheet from the database? Manual edits in those tabs will be replaced.")) return;
-    setSyncing(true);
-    try {
-      const res = await managerApi.syncSheet();
-      toast(`Live sheet synced (${res.rowsWritten} rows)`);
-    } catch (e) {
-      toast(errorMessage(e), "error");
+      toast("Could not download the status report", "error");
     } finally {
-      setSyncing(false);
+      setDownloading(false);
     }
   };
 
@@ -92,17 +90,7 @@ export default function Approvals() {
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2, gap: 1, flexWrap: "wrap" }}>
         <Typography variant="h5" fontWeight={700}>Waiting for approval</Typography>
         <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-          {sheet.enabled && (
-            <>
-              <Button variant="outlined" component="a" href={sheet.url} target="_blank" rel="noopener noreferrer">
-                Open live sheet
-              </Button>
-              <Button variant="outlined" onClick={handleSync} disabled={syncing}>
-                {syncing ? "Syncing..." : "Sync all to sheet"}
-              </Button>
-            </>
-          )}
-          <Button variant="outlined" onClick={handleDownload}>Download Excel report</Button>
+          <Button variant="outlined" onClick={() => setReportAsk(true)}>Status report</Button>
         </Box>
       </Box>
 
@@ -142,6 +130,7 @@ export default function Approvals() {
         </Table>
       </Paper>
 
+      {/* Review: approve or rework */}
       <Dialog open={Boolean(selected)} onClose={() => setSelected(null)} fullWidth maxWidth="sm">
         <DialogTitle>Review: {selected?.title}</DialogTitle>
         <DialogContent>
@@ -161,13 +150,38 @@ export default function Approvals() {
             multiline
             minRows={2}
             sx={{ mt: 1 }}
-            helperText="Your comment is shown to the employee and recorded in the Manager Reviews sheet."
+            helperText="Your comment is shown to the employee and added to the live sheet automatically."
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelected(null)}>Cancel</Button>
           <Button variant="contained" color={isRework ? "warning" : "success"} onClick={handleSubmit}>
             {isRework ? "Send for rework" : "Approve"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Status report: Open file = open the sheet only, Download = download only */}
+      <Dialog open={reportAsk} onClose={() => setReportAsk(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Status report</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {sheet.enabled
+              ? "Open file shows the live sheet in a new tab. Download saves the Excel file only."
+              : "The live sheet is not connected on the server, so you can only download the Excel file."}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setReportAsk(false)} disabled={downloading}>Cancel</Button>
+          <Button
+            variant="outlined"
+            onClick={handleOpenFile}
+            disabled={!sheet.enabled || downloading}
+          >
+            Open file
+          </Button>
+          <Button variant="contained" onClick={handleDownload} disabled={downloading}>
+            {downloading ? "Downloading..." : "Download"}
           </Button>
         </DialogActions>
       </Dialog>
